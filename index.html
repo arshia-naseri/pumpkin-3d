@@ -98,7 +98,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { USDLoader } from 'three/addons/loaders/USDLoader.js';
 
-const DEFAULT_MODEL = 'models/pumpkin_raw.usdz';
+const DEFAULT_MODEL = 'https://pub-7c9c7b82cdcb463ca0b87bfac5075a4d.r2.dev/pumpkin_raw.usdz';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('view');
@@ -335,7 +335,7 @@ function render() {
 }
 renderer.setAnimationLoop(render);
 
-loadFromUrl(DEFAULT_MODEL, DEFAULT_MODEL);
+loadFromUrl(DEFAULT_MODEL, 'pumpkin_raw.usdz');
 </script>
 </body>
 </html>

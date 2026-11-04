@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pumpkin Viewer</title>
+<link rel="icon" href="pumpkin.ico" sizes="any">
 <style>
   :root {
     --bg: #f2f1ee; --panel: rgba(255,255,255,.82); --text: #1c1c1c;
@@ -98,7 +99,11 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { USDLoader } from 'three/addons/loaders/USDLoader.js';
 
-const DEFAULT_MODEL = 'https://pub-7c9c7b82cdcb463ca0b87bfac5075a4d.r2.dev/pumpkin_raw.usdz';
+// Use the local model file on a local server. Use the R2 bucket in production.
+const IS_LOCAL = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+const DEFAULT_MODEL = IS_LOCAL
+  ? 'models/pumpkin_raw.usdz'
+  : 'https://pub-7c9c7b82cdcb463ca0b87bfac5075a4d.r2.dev/pumpkin_raw.usdz';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('view');

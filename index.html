@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Iron Viewer</title>
+<style>
+  :root {
+    --bg: #f2f1ee; --panel: rgba(255,255,255,.82); --text: #1c1c1c;
+    --muted: #6b6b6b; --line: rgba(0,0,0,.1); --accent: #b4532a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151515; --panel: rgba(30,30,30,.82); --text: #ececec;
+      --muted: #9a9a9a; --line: rgba(255,255,255,.12); --accent: #e0814f; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif; overflow: hidden; }
+  #view { position: fixed; inset: 0; display: block; }
+  header { position: fixed; top: 16px; left: 16px; right: 16px; display: flex;
+    justify-content: space-between; align-items: center; gap: 12px; pointer-events: none; }
+  header > * { pointer-events: auto; }
+  h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: .01em; }
+  h1 span { color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .bar { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end;
+    background: var(--panel); backdrop-filter: blur(10px); border: 1px solid var(--line);
+    border-radius: 10px; padding: 6px; }
+  button, label.btn { appearance: none; border: 0; background: transparent; color: var(--text);
+    font: inherit; padding: 6px 10px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+  button:hover, label.btn:hover { background: var(--line); }
+  button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  input[type=file] { display: none; }
+  #status { position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    text-align: center; color: var(--muted); }
+  #progress { width: 220px; height: 3px; background: var(--line); border-radius: 2px;
+    margin: 10px auto 0; overflow: hidden; }
+  #progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+  #info { position: fixed; left: 16px; bottom: 16px; color: var(--muted); font-size: 12px;
+    font-variant-numeric: tabular-nums; }
+  #drop { position: fixed; inset: 12px; border: 2px dashed var(--accent); border-radius: 14px;
+    display: none; place-items: center; font-size: 16px; color: var(--accent);
+    background: color-mix(in srgb, var(--bg) 70%, transparent); }
+  body.dragging #drop { display: grid; }
+  .hidden { display: none !important; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<header>
+  <h1>Iron <span id="filename">pumpkin_raw.usdz</span></h1>
+  <div class="bar">
+    <button id="reset" title="Reset camera (R)">Reset view</button>
+    <button id="spin" aria-pressed="false" title="Auto-rotate (A)">Rotate</button>
+    <button id="wire" aria-pressed="false" title="Wireframe (W)">Wireframe</button>
+    <button id="tex" aria-pressed="true" title="Show textures (T)">Textures</button>
+    <label class="btn" title="Open another .usdz file">Open…<input id="file" type="file" accept=".usdz,.usdc,.usda,.usd"></label>
+  </div>
+</header>
+
+<div id="status"><div id="msg">Loading model…</div><div id="progress"><i></i></div></div>
+<div id="info"></div>
+<div id="drop">Drop a .usdz file to load it</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { USDLoader } from 'three/addons/loaders/USDLoader.js';
+
+const DEFAULT_MODEL = 'models/pumpkin_raw.usdz';
+
+const $ = (id) => document.getElementById(id);
+const canvas = $('view');
+
+// Renderer, scene, camera.
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+
+const scene = new THREE.Scene();
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const key = new THREE.DirectionalLight(0xffffff, 1.2);
+key.position.set(2, 3, 2);
+scene.add(key);
+
+const camera = new THREE.PerspectiveCamera(40, 1, 0.001, 1000);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.autoRotateSpeed = 1.5;
+
+const grid = new THREE.GridHelper(1, 20, 0x888888, 0x888888);
+grid.material.transparent = true;
+grid.material.opacity = 0.25;
+scene.add(grid);
+
+function syncBackground() {
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  scene.background = new THREE.Color(dark ? 0x151515 : 0xf2f1ee);
+}
+syncBackground();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncBackground);
+
+let home = null; // Camera target and model radius for "Reset view".
+let userMoved = false; // True after the user drags, zooms or pans.
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  // Keep the model in view when the window size changes,
+  // until the user moves the camera.
+  if (home && !userMoved) resetView();
+}
+addEventListener('resize', resize);
+resize();
+
+// Model state.
+let model = null;
+const savedMaps = new Map(); // Material -> its texture maps, for the texture toggle.
+
+function frame(object) {
+  const box = new THREE.Box3().setFromObject(object);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+
+  // Put the model on the ground plane at the origin.
+  object.position.sub(new THREE.Vector3(center.x, box.min.y, center.z));
+  const radius = size.length() / 2 || 1;
+
+  grid.scale.setScalar(radius * 4);
+  camera.near = radius / 100;
+  camera.far = radius * 100;
+  camera.updateProjectionMatrix();
+
+  home = { radius, target: new THREE.Vector3(0, size.y / 2, 0) };
+  controls.minDistance = radius * 0.2;
+  controls.maxDistance = radius * 10;
+  resetView();
+  console.info('Model size (m):', size.toArray(), 'radius:', radius);
+
+  return size;
+}
+
+// Distance at which a sphere of the given radius fits in the view.
+// Use the smaller of the vertical and horizontal FOV, so the model
+// also fits in a narrow window.
+function fitDistance(radius) {
+  const vFov = THREE.MathUtils.degToRad(camera.fov);
+  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+  const margin = 1.35;
+  return (radius / Math.sin(Math.min(vFov, hFov) / 2)) * margin;
+}
+
+controls.addEventListener('start', () => { userMoved = true; });
+
+function resetView() {
+  if (!home) return;
+  const dir = new THREE.Vector3(1, 0.6, 1).normalize();
+  camera.position.copy(home.target).addScaledVector(dir, fitDistance(home.radius));
+  controls.target.copy(home.target);
+  controls.update();
+  userMoved = false;
+}
+
+function stats(object, size) {
+  let tris = 0, verts = 0;
+  object.traverse((o) => {
+    if (!o.isMesh) return;
+    const g = o.geometry;
+    verts += g.attributes.position.count;
+    tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
+  });
+  const cm = (v) => (v * 100).toFixed(1);
+  $('info').textContent =
+    `${Math.round(tris).toLocaleString()} triangles · ${verts.toLocaleString()} vertices · ` +
+    `${cm(size.x)} × ${cm(size.y)} × ${cm(size.z)} cm`;
+}
+
+function setStatus(text, pct) {
+  $('status').classList.toggle('hidden', text == null);
+  if (text != null) $('msg').textContent = text;
+  $('progress').classList.toggle('hidden', pct == null);
+  if (pct != null) $('progress').firstElementChild.style.width = `${pct}%`;
+}
+
+function disposeModel() {
+  if (!model) return;
+  scene.remove(model);
+  model.traverse((o) => {
+    if (!o.isMesh) return;
+    o.geometry.dispose();
+    [].concat(o.material).forEach((m) => {
+      Object.values(m).forEach((v) => v?.isTexture && v.dispose());
+      m.dispose();
+    });
+  });
+  savedMaps.clear();
+  model = null;
+}
+
+function showModel(object, name) {
+  disposeModel();
+  model = object;
+  scene.add(model);
+  const size = frame(model);
+  stats(model, size);
+  applyToggles();
+  $('filename').textContent = name;
+  setStatus(null);
+}
+
+const loader = new USDLoader();
+
+async function loadFromUrl(url, name) {
+  setStatus('Loading model…', 0);
+  try {
+    const object = await loader.loadAsync(url, (e) => {
+      if (e.lengthComputable) setStatus(`Loading model… ${Math.round(e.loaded / 1e6)} / ${Math.round(e.total / 1e6)} MB`, (e.loaded / e.total) * 100);
+    });
+    showModel(object, name);
+  } catch (err) {
+    console.error(err);
+    const hint = location.protocol === 'file:'
+      ? 'Open this page through a local web server, not as a file:// URL.'
+      : 'Use "Open…" or drop a .usdz file on the page.';
+    setStatus(`Could not load ${name}. ${hint}`);
+  }
+}
+
+async function loadFromFile(file) {
+  setStatus(`Reading ${file.name}…`);
+  try {
+    const buffer = await file.arrayBuffer();
+    const object = loader.parse(buffer);
+    showModel(object, file.name);
+  } catch (err) {
+    console.error(err);
+    setStatus(`Could not parse ${file.name}.`);
+  }
+}
+
+// Toggles.
+const state = { spin: false, wire: false, tex: true };
+
+function applyToggles() {
+  controls.autoRotate = state.spin;
+  if (!model) return;
+  model.traverse((o) => {
+    if (!o.isMesh) return;
+    [].concat(o.material).forEach((m) => {
+      m.wireframe = state.wire;
+      if (!savedMaps.has(m)) savedMaps.set(m, { map: m.map, normalMap: m.normalMap, aoMap: m.aoMap, roughnessMap: m.roughnessMap });
+      const maps = savedMaps.get(m);
+      for (const k in maps) m[k] = state.tex ? maps[k] : null;
+      m.needsUpdate = true;
+    });
+  });
+}
+
+function toggle(name) {
+  state[name] = !state[name];
+  $(name).setAttribute('aria-pressed', String(state[name]));
+  applyToggles();
+}
+
+$('reset').onclick = resetView;
+$('spin').onclick = () => toggle('spin');
+$('wire').onclick = () => toggle('wire');
+$('tex').onclick = () => toggle('tex');
+$('file').onchange = (e) => e.target.files[0] && loadFromFile(e.target.files[0]);
+
+addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'r') resetView();
+  else if (k === 'a') toggle('spin');
+  else if (k === 'w') toggle('wire');
+  else if (k === 't') toggle('tex');
+});
+
+// Drag and drop.
+let dragDepth = 0;
+addEventListener('dragenter', (e) => { e.preventDefault(); dragDepth++; document.body.classList.add('dragging'); });
+addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dragging'); } });
+addEventListener('dragover', (e) => e.preventDefault());
+addEventListener('drop', (e) => {
+  e.preventDefault();
+  dragDepth = 0;
+  document.body.classList.remove('dragging');
+  const file = e.dataTransfer.files[0];
+  if (file) loadFromFile(file);
+});
+
+renderer.setAnimationLoop(() => {
+  controls.update();
+  renderer.render(scene, camera);
+});
+
+loadFromUrl(DEFAULT_MODEL, DEFAULT_MODEL);
+</script>
+</body>
+</html>

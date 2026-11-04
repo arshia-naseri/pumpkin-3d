@@ -22,14 +22,16 @@
   header > * { pointer-events: auto; }
   h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: .01em; }
   h1 span { color: var(--muted); font-weight: 400; margin-left: 6px; }
-  .bar { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end;
-    background: var(--panel); backdrop-filter: blur(10px); border: 1px solid var(--line);
-    border-radius: 10px; padding: 6px; }
-  button, label.btn { appearance: none; border: 0; background: transparent; color: var(--text);
+  .menu { position: relative; }
+  .bar { position: absolute; top: calc(100% + 6px); right: 0; display: flex; flex-direction: column;
+    gap: 2px; min-width: 140px; background: var(--panel); backdrop-filter: blur(10px);
+    border: 1px solid var(--line); border-radius: 10px; padding: 6px; }
+  #menu-toggle { background: var(--panel); backdrop-filter: blur(10px); border: 1px solid var(--line);
+    border-radius: 10px; padding: 8px 12px; }
+  button { appearance: none; border: 0; background: transparent; color: var(--text); text-align: left;
     font: inherit; padding: 6px 10px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
-  button:hover, label.btn:hover { background: var(--line); }
-  button[aria-pressed="true"] { background: var(--accent); color: #fff; }
-  input[type=file] { display: none; }
+  button:hover { background: var(--line); }
+  .bar button[aria-pressed="true"] { background: var(--accent); color: #fff; }
   #status { position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%);
     text-align: center; color: var(--muted); }
   #progress { width: 220px; height: 3px; background: var(--line); border-radius: 2px;
@@ -55,12 +57,12 @@
 
 <header>
   <h1>Iron <span id="filename">pumpkin_raw.usdz</span></h1>
-  <div class="bar">
-    <button id="reset" title="Reset camera (R)">Reset view</button>
-    <button id="spin" aria-pressed="false" title="Auto-rotate (A)">Rotate</button>
-    <button id="wire" aria-pressed="false" title="Wireframe (W)">Wireframe</button>
-    <button id="tex" aria-pressed="true" title="Show textures (T)">Textures</button>
-    <label class="btn" title="Open another .usdz file">Open…<input id="file" type="file" accept=".usdz,.usdc,.usda,.usd"></label>
+  <div class="menu">
+    <button id="menu-toggle" aria-expanded="false" aria-controls="menu-bar" title="Options (M)">Options ▾</button>
+    <div class="bar hidden" id="menu-bar">
+      <button id="reset" title="Reset camera (R)">Reset view</button>
+      <button id="spin" aria-pressed="false" title="Auto-rotate (A)">Rotate</button>
+    </div>
   </div>
 </header>
 
@@ -126,7 +128,6 @@ resize();
 
 // Model state.
 let model = null;
-const savedMaps = new Map(); // Material -> its texture maps, for the texture toggle.
 
 function frame(object) {
   const box = new THREE.Box3().setFromObject(object);
@@ -204,7 +205,6 @@ function disposeModel() {
       m.dispose();
     });
   });
-  savedMaps.clear();
   model = null;
 }
 
@@ -214,7 +214,6 @@ function showModel(object, name) {
   scene.add(model);
   const size = frame(model);
   stats(model, size);
-  applyToggles();
   $('filename').textContent = name;
   setStatus(null);
 }
@@ -232,7 +231,7 @@ async function loadFromUrl(url, name) {
     console.error(err);
     const hint = location.protocol === 'file:'
       ? 'Open this page through a local web server, not as a file:// URL.'
-      : 'Use "Open…" or drop a .usdz file on the page.';
+      : 'Drop a .usdz file on the page.';
     setStatus(`Could not load ${name}. ${hint}`);
   }
 }
@@ -249,43 +248,33 @@ async function loadFromFile(file) {
   }
 }
 
-// Toggles.
-const state = { spin: false, wire: false, tex: true };
-
-function applyToggles() {
-  controls.autoRotate = state.spin;
-  if (!model) return;
-  model.traverse((o) => {
-    if (!o.isMesh) return;
-    [].concat(o.material).forEach((m) => {
-      m.wireframe = state.wire;
-      if (!savedMaps.has(m)) savedMaps.set(m, { map: m.map, normalMap: m.normalMap, aoMap: m.aoMap, roughnessMap: m.roughnessMap });
-      const maps = savedMaps.get(m);
-      for (const k in maps) m[k] = state.tex ? maps[k] : null;
-      m.needsUpdate = true;
-    });
-  });
+// Options menu.
+function toggleSpin() {
+  controls.autoRotate = !controls.autoRotate;
+  $('spin').setAttribute('aria-pressed', String(controls.autoRotate));
 }
 
-function toggle(name) {
-  state[name] = !state[name];
-  $(name).setAttribute('aria-pressed', String(state[name]));
-  applyToggles();
+function setMenuOpen(open) {
+  $('menu-bar').classList.toggle('hidden', !open);
+  $('menu-toggle').setAttribute('aria-expanded', String(open));
 }
 
+$('menu-toggle').onclick = () => setMenuOpen($('menu-bar').classList.contains('hidden'));
 $('reset').onclick = resetView;
-$('spin').onclick = () => toggle('spin');
-$('wire').onclick = () => toggle('wire');
-$('tex').onclick = () => toggle('tex');
-$('file').onchange = (e) => e.target.files[0] && loadFromFile(e.target.files[0]);
+$('spin').onclick = toggleSpin;
+
+// Close the menu when the user clicks outside it.
+addEventListener('pointerdown', (e) => {
+  if (!e.target.closest('.menu')) setMenuOpen(false);
+});
 
 addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key.toLowerCase();
   if (k === 'r') resetView();
-  else if (k === 'a') toggle('spin');
-  else if (k === 'w') toggle('wire');
-  else if (k === 't') toggle('tex');
+  else if (k === 'a') toggleSpin();
+  else if (k === 'm') setMenuOpen($('menu-bar').classList.contains('hidden'));
+  else if (k === 'escape') setMenuOpen(false);
 });
 
 // Drag and drop.

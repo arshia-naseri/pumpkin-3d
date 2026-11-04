@@ -183,7 +183,9 @@ function fitDistance(radius) {
   const vFov = THREE.MathUtils.degToRad(camera.fov);
   const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
   const margin = 1.35;
-  return (radius / Math.sin(Math.min(vFov, hFov) / 2)) * margin;
+  // On a narrow (mobile) screen, show the model 1.5 times larger.
+  const zoom = matchMedia('(max-width: 600px)').matches ? 1.5 : 1;
+  return (radius / Math.sin(Math.min(vFov, hFov) / 2)) * margin / zoom;
 }
 
 controls.addEventListener('start', () => { userMoved = true; });

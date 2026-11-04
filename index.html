@@ -44,6 +44,15 @@
     background: color-mix(in srgb, var(--bg) 70%, transparent); }
   body.dragging #drop { display: grid; }
   .hidden { display: none !important; }
+  dialog { max-width: min(420px, calc(100vw - 32px)); background: var(--bg); color: var(--text);
+    border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  dialog h2 { margin: 0 0 8px; font-size: 16px; }
+  dialog p { margin: 0 0 10px; }
+  dialog .muted { color: var(--muted); font-size: 12px; }
+  dialog form { display: flex; justify-content: flex-end; }
+  dialog form button { background: var(--accent); color: #fff; }
+  kbd { font: 12px ui-monospace, monospace; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 </style>
 <script type="importmap">
 { "imports": {
@@ -66,12 +75,22 @@
         <span>Light <output id="light-value">0.40</output></span>
         <input id="light" type="range" min="0" max="2" step="0.05" value="0.4">
       </label>
+      <button id="about-open">About</button>
     </div>
   </div>
 </header>
 
 <div id="status"><div id="msg">Loading model…</div><div id="progress"><i></i></div></div>
 <div id="drop">Drop a .usdz file to load it</div>
+
+<dialog id="about">
+  <h2>About</h2>
+  <p>Iron is a 3D viewer for USDZ models.</p>
+  <p>Drag to rotate. Scroll to zoom. Right-drag to pan.<br>
+    Keys: <kbd>R</kbd> reset view · <kbd>A</kbd> rotate · <kbd>G</kbd> grid · <kbd>M</kbd> menu</p>
+  <p class="muted">Rendering is paused while this dialog is open.</p>
+  <form method="dialog"><button>Close</button></form>
+</dialog>
 
 <script type="module">
 import * as THREE from 'three';
@@ -252,6 +271,17 @@ $('menu-toggle').onclick = () => setMenuOpen($('menu-bar').classList.contains('h
 $('reset').onclick = resetView;
 $('spin').onclick = toggleSpin;
 
+// About dialog. Stop the render loop while the dialog is open,
+// and start it again when the dialog closes.
+$('about-open').onclick = () => {
+  setMenuOpen(false);
+  renderer.setAnimationLoop(null);
+  $('about').showModal();
+};
+$('about').addEventListener('close', () => {
+  renderer.setAnimationLoop(render);
+});
+
 function toggleGrid() {
   grid.visible = !grid.visible;
   $('grid').setAttribute('aria-pressed', String(grid.visible));
@@ -275,6 +305,7 @@ addEventListener('pointerdown', (e) => {
 
 addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if ($('about').open) return; // No shortcuts while the About dialog is open.
   const k = e.key.toLowerCase();
   if (k === 'r') resetView();
   else if (k === 'a') toggleSpin();
@@ -296,10 +327,11 @@ addEventListener('drop', (e) => {
   if (file) loadFromFile(file);
 });
 
-renderer.setAnimationLoop(() => {
+function render() {
   controls.update();
   renderer.render(scene, camera);
-});
+}
+renderer.setAnimationLoop(render);
 
 loadFromUrl(DEFAULT_MODEL, DEFAULT_MODEL);
 </script>

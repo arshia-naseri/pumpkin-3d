@@ -53,6 +53,20 @@
   dialog .muted { color: var(--muted); font-size: 12px; }
   dialog form { display: flex; justify-content: flex-end; }
   dialog form button { background: var(--accent); color: #fff; }
+  #hint { position: fixed; left: 50%; bottom: calc(32px + env(safe-area-inset-bottom));
+    transform: translateX(-50%); display: flex; gap: 18px; padding: 10px 16px;
+    background: var(--panel); backdrop-filter: blur(10px); border: 1px solid var(--line);
+    border-radius: 12px; color: var(--text); font-size: 13px; white-space: nowrap;
+    pointer-events: none; opacity: 0; transition: opacity .4s; }
+  #hint.show { opacity: 1; }
+  #hint span { display: flex; align-items: center; gap: 6px; }
+  #hint b { font-size: 18px; font-weight: normal; }
+  /* Show the zoom gesture that agrees with the input device. */
+  #hint .touch { display: none; }
+  @media (pointer: coarse) {
+    #hint .touch { display: flex; }
+    #hint .mouse { display: none; }
+  }
   kbd { font: 12px ui-monospace, monospace; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 </style>
 <script type="importmap">
@@ -83,6 +97,11 @@
 
 <div id="status"><div id="msg">Loading model…</div><div id="progress"><i></i></div></div>
 <div id="drop">Drop a .usdz file to load it</div>
+<div id="hint" aria-live="polite">
+  <span><b>☝︎</b> Drag to rotate</span>
+  <span class="touch"><b>🤏</b> Pinch to zoom</span>
+  <span class="mouse"><b>🖱︎</b> Scroll to zoom</span>
+</div>
 
 <dialog id="about">
   <h2>About</h2>
@@ -231,7 +250,29 @@ function showModel(object) {
   scene.add(model);
   frame(model);
   setStatus(null);
+  showHint();
 }
+
+// Gesture hint. Show the gestures for some seconds after the first
+// model loads. Hide the hint when the time ends or when the user
+// moves the camera (drag, pinch, scroll or pan).
+const HINT_MS = 10000;
+let hintShown = false;
+let hintTimer = 0;
+
+function hideHint() {
+  clearTimeout(hintTimer);
+  $('hint').classList.remove('show');
+}
+
+function showHint() {
+  if (hintShown) return;
+  hintShown = true;
+  $('hint').classList.add('show');
+  hintTimer = setTimeout(hideHint, HINT_MS);
+}
+
+controls.addEventListener('start', hideHint);
 
 const loader = new USDLoader();
 

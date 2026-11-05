@@ -7,7 +7,7 @@
 <link rel="icon" href="pumpkin.ico" sizes="any">
 <style>
   :root {
-    --bg: #151515; /* light was #f2f1ee */ --panel: rgba(255,255,255,.82); --text: #1c1c1c;
+    --bg: #f2f1ee; --panel: rgba(255,255,255,.82); --text: #1c1c1c;
     --muted: #6b6b6b; --line: rgba(0,0,0,.1); --accent: #b4532a;
   }
   @media (prefers-color-scheme: dark) {
@@ -155,8 +155,7 @@ scene.add(grid);
 
 function syncBackground() {
   const dark = matchMedia('(prefers-color-scheme: dark)').matches;
-  // Light background was 0xf2f1ee. Both themes now use near-black.
-  scene.background = new THREE.Color(0x151515);
+  scene.background = new THREE.Color(dark ? 0x151515 : 0xf2f1ee);
 }
 syncBackground();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncBackground);
